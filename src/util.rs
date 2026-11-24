@@ -288,7 +288,7 @@ pub fn usable_start_dir(dir: &str) -> Option<std::path::PathBuf> {
         return Some(std::path::PathBuf::from(dir));
     }
 
-    let home = crate::paths::home_dir();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     if !home.is_empty() && std::path::Path::new(&home).is_dir() {
         return Some(std::path::PathBuf::from(home));
     }
@@ -341,8 +341,8 @@ pub fn same_dir(a: &str, b: &str) -> bool {
 pub fn expand_run_shell_path(cmd: &str) -> String {
     // Step 1: expand ~ to home directory
     let cmd = if cmd.contains('~') {
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
         cmd.replace("~/", &format!("{}/", home))
            .replace("~\\", &format!("{}\\", home))
@@ -351,8 +351,8 @@ pub fn expand_run_shell_path(cmd: &str) -> String {
     };
 
     // Step 2: XDG fallback for plugin paths
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_default();
     let classic_fwd = format!("{}/.psmux/plugins/", home);
     let classic_win = format!("{}\\.psmux\\plugins\\", home);

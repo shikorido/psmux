@@ -1751,7 +1751,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
             env::set_var("PSMUX_TARGET_SESSION", &name);
         }
     }
-    
+
     // Keep command tails verbatim. Only the outer target consumed for routing
     // is removed; nested commands and argv after `--` retain their own `-t`.
     let cmd_args: Vec<&String> = command_index
@@ -1768,7 +1768,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 .collect()
         })
         .unwrap_or_default();
-    
+
     let cmd = cmd_args.first().map(|s| s.as_str()).unwrap_or("");
 
     // Issue #545: commands that operate on an EXISTING window/pane must fail
@@ -2146,7 +2146,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                                                         };
                                                         if !passes { continue; }
                                                     }
-                                                    println!("{}", display_name); 
+                                                    println!("{}", display_name);
                                                 }
                                             } else if refused {
                                                 // Actively refused → truly dead. Remove the WHOLE
@@ -2544,7 +2544,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 } else {
                     Some(positional_args.join(" "))
                 };
-                
+
                 // Check if session already exists AND is actually running
                 let psmux_dir = crate::paths::psmux_dir();
                 let port_path = crate::paths::port_file(&port_file_base);
@@ -2565,7 +2565,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                             ).is_ok()
                         } else { false }
                     } else { false };
-                    
+
                     // Issue #774: the lookup above is case-insensitive, so a
                     // live `repro-case` answers for `REPRO-CASE`. tmux would
                     // create a second session; psmux keys every registry file,
@@ -2606,7 +2606,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                         let _ = std::fs::remove_file(&port_path);
                     }
                 }
-                
+
                 // If -A attached to an existing session, skip server creation
                 if env::var("PSMUX_REMOTE_ATTACH").ok().as_deref() == Some("1") {
                     // Already set up for attach — skip server spawn
@@ -2882,7 +2882,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 }
                 } // end if !claimed_warm (cold path)
                 } // end else (not PSMUX_REMOTE_ATTACH)
-                
+
                 // Wait for server to create port file (up to 5 seconds)
                 // Poll fast (10ms) — the server writes the port file early,
                 // before spawning ConPTY/pwsh, so it should appear quickly.
@@ -5004,7 +5004,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                     std::process::exit(1);
                 }
                 let cwd = env::current_dir().unwrap_or_default();
-                let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+                let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
                 let mut failed = false;
                 let mut paths = Vec::new();
                 for path in std::mem::take(&mut spec.paths) {
@@ -5338,7 +5338,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 let mut format_mode = false;
                 let mut target: Option<String> = None;
                 let mut i = 1;
-                
+
                 while i < cmd_args.len() {
                     match cmd_args[i].as_str() {
                         "-b" => { background = true; }
@@ -5357,7 +5357,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                     }
                     i += 1;
                 }
-                
+
                 if let (Some(cond), Some(true_cmd)) = (condition, cmd_true) {
                     // tmux format expands the shell command before it runs
                     // (cmd-if-shell.c:86), against the target or, on an empty
@@ -5467,9 +5467,9 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                             c.status().map(|s| s.success()).unwrap_or(false)
                         }
                     };
-                    
+
                     let cmd_to_run = if success { Some(true_cmd) } else { cmd_false };
-                    
+
                     if let Some(cmd) = cmd_to_run {
                         // Re-quote multi-word arguments for TCP transport
                         let needs_quoting = cmd.contains(' ');
@@ -5498,7 +5498,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 let mut unlock = false;
                 let mut channel: Option<String> = None;
                 let mut i = 1;
-                
+
                 while i < cmd_args.len() {
                     match cmd_args[i].as_str() {
                         "-L" => { lock = true; }
@@ -5509,7 +5509,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                     }
                     i += 1;
                 }
-                
+
                 if let Some(ch) = channel {
                     if signal {
                         send_control(format!("wait-for -S {}\n", ch))?;
@@ -5533,7 +5533,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 let mut next = false;
                 let mut prev = false;
                 let mut i = 1;
-                
+
                 while i < cmd_args.len() {
                     match cmd_args[i].as_str() {
                         "-n" => { next = true; }
@@ -5546,7 +5546,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                     }
                     i += 1;
                 }
-                
+
                 if next {
                     send_control("next-layout\n".to_string())?;
                 } else if prev {
@@ -6409,7 +6409,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 }
             }
         }
-    
+
     // Prevent nesting: similar to tmux checking $TMUX.
     // PSMUX_ACTIVE is set on the client process itself.
     // PSMUX_SESSION is set on child panes spawned by the server.
@@ -6824,7 +6824,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
                 env::var("PSMUX_SWITCH_TO").is_ok()
             ));
         }
-        
+
         // Check if we should switch to another session
         if let Ok(switch_to) = env::var("PSMUX_SWITCH_TO") {
             env::remove_var("PSMUX_SWITCH_TO");
@@ -6854,7 +6854,7 @@ fn run_main_with(argv: Vec<String>, alias_expanded: bool) -> io::Result<()> {
             // Continue loop to attach to new session
             continue;
         }
-        
+
         break result;
     };
 

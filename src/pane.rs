@@ -2701,7 +2701,7 @@ pub fn apply_bare_env_if_set(builder: &mut CommandBuilder) -> bool {
     // PSMUX_SESSION/TMUX afterwards via build_command + set_tmux_env.
     for key in [
         "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR",
-        "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH",
+        "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH", "HOME",
         "COMPUTERNAME", "COMSPEC", "PATH", "PATHEXT",
         "TEMP", "TMP",
         "PROCESSOR_ARCHITECTURE",

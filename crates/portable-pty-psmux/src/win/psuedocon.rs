@@ -12,7 +12,7 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::{mem, ptr};
-use winapi::shared::minwindef::DWORD;
+use winapi::shared::minwindef::{DWORD, HINSTANCE};
 use winapi::shared::winerror::{HRESULT, S_OK};
 use winapi::um::handleapi::*;
 use winapi::um::processthreadsapi::*;
@@ -182,13 +182,87 @@ fn wide_nul(s: &std::ffi::OsStr) -> Vec<u16> {
     s.encode_wide().chain(std::iter::once(0)).collect()
 }
 
+fn validate_conpty_dll(
+    module: HINSTANCE,
+    requested_dir: PathBuf
+) -> Result<ConPtyApi, String> {
+    use winapi::um::libloaderapi::GetProcAddress;
+    let resolve = |name: &[u8]| -> Result<*mut (), String> {
+        let p = unsafe { GetProcAddress(module, name.as_ptr() as *const i8) };
+        if p.is_null() {
+            Err(format!(
+                "{}/conpty.dll exports no {}",
+                requested_dir.display(),
+                String::from_utf8_lossy(&name[..name.len() - 1])
+            ))
+        } else {
+            Ok(p as *mut ())
+        }
+    };
+    let create = resolve(b"CreatePseudoConsole\0")?;
+    let resize = resolve(b"ResizePseudoConsole\0")?;
+    let close = resolve(b"ClosePseudoConsole\0")?;
+    // The module handle is intentionally leaked: see ConPtyApi's doc comment.
+    Ok(unsafe {
+        ConPtyApi {
+            CreatePseudoConsole: mem::transmute::<*mut (), CreatePseudoConsoleFn>(create),
+            ResizePseudoConsole: mem::transmute::<*mut (), ResizePseudoConsoleFn>(resize),
+            ClosePseudoConsole: mem::transmute::<*mut (), ClosePseudoConsoleFn>(close),
+            _guard: None,
+            source: ConPtySource::Directory,
+            requested_dir: Some(requested_dir),
+        }
+    })
+}
+
+fn module_path(module: HINSTANCE) -> PathBuf {
+    use winapi::um::libloaderapi::GetModuleFileNameW;
+
+    unsafe {
+        let mut path: [u16; 260] = [0; 260]; // MAX_PATH
+        let len = GetModuleFileNameW(module, path.as_mut_ptr(), path.len() as DWORD);
+        if len == 0 || len >= path.len() as DWORD {
+            let mut expanded: Vec<u16> = vec![0; 32767]; // MAX_PATH extended
+            let len = GetModuleFileNameW(module, expanded.as_mut_ptr(), expanded.len() as DWORD);
+            if len == 0 {
+                return PathBuf::new();
+            }
+            expanded.truncate(len as usize);
+            PathBuf::from(OsString::from_wide(&expanded))
+        } else {
+            PathBuf::from(OsString::from_wide(&path))
+        }
+    }
+}
+
+fn load_conpty_default() -> ConPtyApi {
+    use winapi::um::libloaderapi::LoadLibraryW;
+
+    let wide = wide_nul(OsString::from("conpty.dll").as_os_str());
+    let module = unsafe { LoadLibraryW(wide.as_ptr()) };
+    if module.is_null() {
+        return load_conpty_kernel32();
+    }
+    let modpath = match module_path(module).parent() {
+        Some(p) => p.to_path_buf(),
+        None => return load_conpty_kernel32(),
+    };
+    match validate_conpty_dll(module, modpath) {
+        Ok(api) => api,
+        Err(reason) => {
+            log::warn!("conpty.dll validation failed: {}; falling back to kernel32", reason);
+            load_conpty_kernel32()
+        }
+    }
+}
+
 /// Load `<dir>\conpty.dll` by absolute path with `LOAD_WITH_ALTERED_SEARCH_PATH`,
 /// so that the DLL's own directory (and therefore the `OpenConsole.exe` sitting
 /// next to it, which conpty.dll spawns relative to its own module path) is what
 /// gets used.  Returns a human readable reason on failure; the caller logs it
 /// and falls back to kernel32.
 fn load_conpty_from_dir(dir: &Path) -> Result<ConPtyApi, String> {
-    use winapi::um::libloaderapi::{GetProcAddress, LoadLibraryExW};
+    use winapi::um::libloaderapi::LoadLibraryExW;
 
     const LOAD_WITH_ALTERED_SEARCH_PATH: DWORD = 0x0000_0008;
 
@@ -212,65 +286,7 @@ fn load_conpty_from_dir(dir: &Path) -> Result<ConPtyApi, String> {
             IoError::last_os_error()
         ));
     }
-    let resolve = |name: &[u8]| -> Result<*mut (), String> {
-        let p = unsafe { GetProcAddress(module, name.as_ptr() as *const i8) };
-        if p.is_null() {
-            Err(format!(
-                "{} exports no {}",
-                abs.display(),
-                String::from_utf8_lossy(&name[..name.len() - 1])
-            ))
-        } else {
-            Ok(p as *mut ())
-        }
-    };
-    let create = resolve(b"CreatePseudoConsole\0")?;
-    let resize = resolve(b"ResizePseudoConsole\0")?;
-    let close = resolve(b"ClosePseudoConsole\0")?;
-    // The module handle is intentionally leaked: see ConPtyApi's doc comment.
-    Ok(unsafe {
-        ConPtyApi {
-            CreatePseudoConsole: mem::transmute::<*mut (), CreatePseudoConsoleFn>(create),
-            ResizePseudoConsole: mem::transmute::<*mut (), ResizePseudoConsoleFn>(resize),
-            ClosePseudoConsole: mem::transmute::<*mut (), ClosePseudoConsoleFn>(close),
-            _guard: None,
-            source: ConPtySource::Directory,
-            requested_dir: None,
-        }
-    })
-}
-
-/// Pick the ConPTY implementation.  `dir` is the value of `PSMUX_CONPTY_DIR`;
-/// `None` (the default, unset) is kernel32 only, exactly as before.  A named
-/// directory that cannot be loaded logs the reason and falls back to kernel32
-/// rather than failing the pane.
-fn resolve_conpty(dir: Option<PathBuf>) -> ConPtyApi {
-    let requested_dir = dir.clone();
-    let mut api = resolve_conpty_inner(dir);
-    api.requested_dir = requested_dir;
-    api
-}
-
-fn resolve_conpty_inner(dir: Option<PathBuf>) -> ConPtyApi {
-    if let Some(dir) = dir {
-        match load_conpty_from_dir(&dir) {
-            Ok(api) => {
-                log::info!(
-                    "ConPTY loaded from PSMUX_CONPTY_DIR {} (conpty.dll + its OpenConsole.exe)",
-                    dir.display()
-                );
-                return api;
-            }
-            Err(reason) => {
-                log::warn!(
-                    "PSMUX_CONPTY_DIR {} not used ({}); falling back to kernel32 ConPTY",
-                    dir.display(),
-                    reason
-                );
-            }
-        }
-    }
-    load_conpty_kernel32()
+    validate_conpty_dll(module, dir.to_path_buf())
 }
 
 fn conpty_dir_from_env() -> Option<PathBuf> {
@@ -281,8 +297,33 @@ fn conpty_dir_from_env() -> Option<PathBuf> {
     Some(PathBuf::from(v))
 }
 
+/// Pick the ConPTY implementation.  `dir` is the value of `PSMUX_CONPTY_DIR`;
+/// `None` (the default, unset) is kernel32 only, exactly as before.  A named
+/// directory that cannot be loaded logs the reason and falls back to kernel32
+/// rather than failing the pane.
+//fn resolve_conpty() -> ConPtyApi {
+//}
+
 fn load_conpty() -> ConPtyApi {
-    resolve_conpty(conpty_dir_from_env())
+    if let Some(dir) = conpty_dir_from_env() {
+        match load_conpty_from_dir(&dir) {
+            Ok(api) => {
+                log::info!(
+                    "ConPTY loaded from PSMUX_CONPTY_DIR {} (conpty.dll + its OpenConsole.exe)",
+                    dir.display()
+                );
+                return api;
+            }
+            Err(reason) => {
+                log::warn!(
+                    "PSMUX_CONPTY_DIR {} not used ({}); falling back to ConPTY alongside exe",
+                    dir.display(),
+                    reason
+                );
+            }
+        }
+    }
+    load_conpty_default()
 }
 
 lazy_static! {

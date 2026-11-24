@@ -2835,14 +2835,14 @@ pub fn swap_pane(app: &mut AppState, dir: FocusDir) -> bool {
     let win = &mut app.windows[app.active_idx];
     let mut rects: Vec<(Vec<usize>, Rect)> = Vec::new();
     compute_rects(&win.root, app.last_window_area, &mut rects);
-    
+
     let mut active_idx = None;
-    for (i, (path, _)) in rects.iter().enumerate() { 
-        if *path == win.active_path { active_idx = Some(i); break; } 
+    for (i, (path, _)) in rects.iter().enumerate() {
+        if *path == win.active_path { active_idx = Some(i); break; }
     }
     let Some(ai) = active_idx else { return false; };
     let (_, arect) = &rects[ai];
-    
+
     // Collect pane IDs for MRU-based tie-breaking (issue #70)
     let pane_ids: Vec<usize> = rects.iter().map(|(path, _)| {
         crate::tree::get_active_pane_id(&win.root, path).unwrap_or(usize::MAX)
@@ -4746,8 +4746,8 @@ pub fn respawn_active_pane(app: &mut AppState, pty_system_ref: Option<&dyn porta
     // only; a later respawn without -e does not inherit it.
     for (k, v) in extra_env { shell_cmd.env(k, v); }
     if let Some(dir) = workdir {
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
         let expanded = dir.replace("~/", &format!("{}/", home))
             .replace("~\\", &format!("{}\\", home));
@@ -4769,12 +4769,12 @@ pub fn respawn_active_pane(app: &mut AppState, pty_system_ref: Option<&dyn porta
     let term: Arc<Mutex<vt100::Parser>> = Arc::new(Mutex::new(reinit_parser_keep_history(&pane.term, size.rows, size.cols, app.history_limit, app.allow_alternate_screen)));
     let term_reader = term.clone();
     let reader = pair.master.try_clone_reader().map_err(|e| io::Error::new(io::ErrorKind::Other, format!("clone reader error: {e}")))?;
-    
+
     let data_version = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let dv_writer = data_version.clone();
     let cursor_shape = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(crate::pane::CURSOR_SHAPE_UNSET));
     let cs_writer = cursor_shape.clone();
-    
+
     let bell_pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let bell_writer = bell_pending.clone();
     let cpr_pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

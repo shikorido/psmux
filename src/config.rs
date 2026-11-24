@@ -62,14 +62,14 @@ pub fn read_user_config_content() -> Option<String> {
     let strip_bom = |s: String| s.strip_prefix('\u{FEFF}').map(str::to_string).unwrap_or(s);
     if let Ok(config_file) = env::var("PSMUX_CONFIG_FILE") {
         let expanded = if config_file.starts_with('~') {
-            let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+            let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
             config_file.replacen('~', &home, 1)
         } else {
             config_file
         };
         return std::fs::read_to_string(expanded).ok().map(strip_bom);
     }
-    let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+    let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
     let paths = [
         format!("{}/.psmux.conf", home),
         format!("{}/.psmuxrc", home),
@@ -381,7 +381,8 @@ pub fn load_config(app: &mut AppState) {
     // If -f flag was used, load that specific config file instead of default search
     if let Ok(config_file) = env::var("PSMUX_CONFIG_FILE") {
         let expanded = if config_file.starts_with('~') {
-            config_file.replacen('~', &crate::paths::home_dir(), 1)
+            let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
+            config_file.replacen('~', &home, 1)
         } else {
             config_file
         };
@@ -409,7 +410,7 @@ pub fn load_config(app: &mut AppState) {
     // `/home/user\.config\psmux\psmux.conf`, which never matches anything — so
     // psmux silently started with NO config at all while every other part of it
     // used the real Windows profile directory.
-    let home = crate::paths::home_dir();
+    let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
     let paths = vec![
         format!("{}\\.psmux.conf", home),
         format!("{}\\.psmuxrc", home),
@@ -453,7 +454,8 @@ pub fn is_startup_config(app: &AppState, spec: &str) -> bool {
     let Some(start) = app.startup_config_file.as_deref() else { return false };
     let spec = parse_source_spec(spec);
     let expand = |p: &str| -> String {
-        if p.starts_with('~') { p.replacen('~', &crate::paths::home_dir(), 1) } else { p.to_string() }
+        let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
+        if p.starts_with('~') { p.replacen('~', &home, 1) } else { p.to_string() }
     };
     spec.paths.iter().any(|p| {
         let raw = if spec.format { crate::format::expand_format(p, app) } else { p.clone() };
@@ -2591,7 +2593,7 @@ pub fn parse_option_value(app: &mut AppState, key: &str, value: &str, _is_global
                     app.ppm_declared = true;
                     app.pending_plugin_scripts.clear();
                 } else {
-                    let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+                    let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
                     let xdg_config = env::var("XDG_CONFIG_HOME")
                         .unwrap_or_else(|_| format!("{}\\.config", home));
                     let candidates = [
@@ -2910,7 +2912,7 @@ pub fn parse_bind_key(app: &mut AppState, line: &str) {
     // split/join did.
     let command = line[pos..].split_whitespace().collect::<Vec<_>>().join(" ");
     if command.is_empty() { return; }
-    
+
     // The command list: `a \; b`, `'a; b'` and tmux's block form `{ a; b }`,
     // aliases expanded.
     let sub_commands: Vec<String> = bind_commands(&app.command_aliases, &command);
@@ -2958,11 +2960,11 @@ pub fn parse_bind_key(app: &mut AppState, line: &str) {
 pub fn parse_unbind_key(app: &mut AppState, line: &str) {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 2 { return; }
-    
+
     let mut i = 1;
     let mut unbind_all = false;
     let mut table: Option<String> = None;
-    
+
     while i < parts.len() {
         let p = parts[i];
         if p.starts_with('-') {
@@ -2977,7 +2979,7 @@ pub fn parse_unbind_key(app: &mut AppState, line: &str) {
             break;
         }
     }
-    
+
     if unbind_all {
         if let Some(t) = table {
             // -a -T <table>: only clear that table
@@ -2992,7 +2994,7 @@ pub fn parse_unbind_key(app: &mut AppState, line: &str) {
         }
         return;
     }
-    
+
     if i < parts.len() {
         if let Some(key) = parse_key_name(parts[i]) {
             let key = normalize_key_for_binding(key);
@@ -3208,7 +3210,7 @@ pub fn parse_key_name(name: &str) -> Option<(KeyCode, KeyModifiers)> {
         }
         // Unrecognized key after modifiers — fall through
     }
-    
+
     match name.to_uppercase().as_str() {
         "ENTER" => return Some((KeyCode::Enter, KeyModifiers::NONE)),
         "TAB" => return Some((KeyCode::Tab, KeyModifiers::NONE)),
@@ -3240,7 +3242,7 @@ pub fn parse_key_name(name: &str) -> Option<(KeyCode, KeyModifiers)> {
         "F12" => return Some((KeyCode::F(12), KeyModifiers::NONE)),
         _ => {}
     }
-    
+
     // One character, not one byte (issue #616): `bind <U+044B>` is a 2 byte
     // key name and used to fall straight through to None.
     if name.chars().count() == 1 {
@@ -3378,7 +3380,7 @@ pub(crate) fn source_key(path: &str) -> String {
 /// equivalent when that one does (issue #135).
 fn expand_source_path(path: &str) -> String {
     let expanded_path = if path.starts_with('~') {
-        let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+        let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
         path.replacen('~', &home, 1)
     } else {
         path.to_string()
@@ -3390,7 +3392,7 @@ fn expand_source_path(path: &str) -> String {
     // Fallback: if path references ~/.psmux/ but doesn't exist and the
     // XDG equivalent (~/.config/psmux/) does, use that instead (issue #135).
     if !std::path::Path::new(&expanded_path).exists() {
-        let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+        let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
         let classic = format!("{}\\.psmux\\", home);
         if expanded_path.starts_with(&classic) {
             let xdg_base = env::var("XDG_CONFIG_HOME")
@@ -3713,7 +3715,7 @@ fn begin_source_warnings(app: &mut AppState) {
 /// in warnings and in #{current_file}.
 fn source_glob(app: &mut AppState, pattern: &str, quiet: bool) {
     let expanded = if pattern.starts_with('~') {
-        let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).unwrap_or_default();
+        let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
         pattern.replacen('~', &home, 1)
     } else {
         pattern.to_string()
@@ -3937,7 +3939,7 @@ pub fn parse_key_string(key: &str) -> Option<(KeyCode, KeyModifiers)> {
     }
     let mut mods = KeyModifiers::empty();
     let mut key_part = key;
-    
+
     // Characters, not bytes (issue #616). `M-<U+0444>` is 3 characters but 4
     // bytes; more importantly the single-character arm below used byte length,
     // so the CLI / server route dropped every non-ASCII key exactly the way the
@@ -3956,7 +3958,7 @@ pub fn parse_key_string(key: &str) -> Option<(KeyCode, KeyModifiers)> {
             break;
         }
     }
-    
+
     let keycode = match key_part.to_lowercase().as_str() {
         // Single character keys: preserve the ORIGINAL case from key_part, not the lowercased version.
         // This is critical for case-sensitive bind-key (issue #157): bind-key T != bind-key t.
@@ -4005,7 +4007,7 @@ pub fn parse_key_string(key: &str) -> Option<(KeyCode, KeyModifiers)> {
             return None;
         }
     };
-    
+
     Some((keycode, mods))
 }
 
@@ -4043,7 +4045,7 @@ pub fn format_option_key(key: &Option<(KeyCode, KeyModifiers)>) -> String {
 pub fn format_key_binding(key: &(KeyCode, KeyModifiers)) -> String {
     let (keycode, mods) = key;
     let mut result = String::new();
-    
+
     if mods.contains(KeyModifiers::CONTROL) {
         result.push_str("C-");
     }
@@ -4053,7 +4055,7 @@ pub fn format_key_binding(key: &(KeyCode, KeyModifiers)) -> String {
     if mods.contains(KeyModifiers::SHIFT) {
         result.push_str("S-");
     }
-    
+
     let key_str = match keycode {
         KeyCode::Char(c) if crate::mouse_keys::is_mouse_char(*c) => {
             crate::mouse_keys::name(*c).unwrap_or_else(|| "?".to_string())
@@ -4084,7 +4086,7 @@ pub fn format_key_binding(key: &(KeyCode, KeyModifiers)) -> String {
         KeyCode::F(n) => format!("F{}", n),
         _ => "?".to_string(),
     };
-    
+
     result.push_str(&key_str);
     result
 }

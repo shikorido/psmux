@@ -465,7 +465,7 @@ fn run_shell_line(
 /// fail the whole command instead.
 pub(crate) fn resolve_run_shell_cwd(cwd: Option<&str>) -> Option<PathBuf> {
     let Some(cwd) = cwd.filter(|d| !d.is_empty()) else { return None };
-    let home = crate::paths::home_dir();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let dir = match cwd.strip_prefix('~') {
         Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => format!("{}{}", home, rest),
         _ => cwd.to_string(),
@@ -1235,7 +1235,7 @@ fn parse_window_target(target: &str) -> Option<usize> {
 pub fn parse_command_to_action(cmd: &str) -> Option<Action> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() { return None; }
-    
+
     match parts[0] {
         "display-panes" | "displayp" => Some(Action::DisplayPanes),
         "new-window" | "neww" => {
@@ -1687,12 +1687,12 @@ pub fn parse_menu_definition(def: &str, x: Option<i16>, y: Option<i16>) -> Menu 
         x,
         y,
     };
-    
+
     let parts: Vec<&str> = def.split_whitespace().collect();
     if parts.is_empty() {
         return menu;
     }
-    
+
     let mut i = 0;
     while i < parts.len() {
         if parts[i] == "-T" {
@@ -1702,7 +1702,7 @@ pub fn parse_menu_definition(def: &str, x: Option<i16>, y: Option<i16>) -> Menu 
                 continue;
             }
         }
-        
+
         if let Some(name) = parts.get(i) {
             let name = name.trim_matches('"').to_string();
             if name.is_empty() || name == "-" {
@@ -1728,7 +1728,7 @@ pub fn parse_menu_definition(def: &str, x: Option<i16>, y: Option<i16>) -> Menu 
             break;
         }
     }
-    
+
     if menu.items.is_empty() && !def.is_empty() {
         menu.title = "Menu".to_string();
         menu.items.push(MenuItem {
@@ -1738,7 +1738,7 @@ pub fn parse_menu_definition(def: &str, x: Option<i16>, y: Option<i16>) -> Menu 
             is_separator: false,
         });
     }
-    
+
     menu
 }
 
